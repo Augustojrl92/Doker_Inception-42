@@ -3,47 +3,69 @@
 # Script de inicialización de MariaDB
 # Proyecto Inception - 42
 #
-# Este script se ejecuta cuando el contenedor arranca.
-# Su función es:
-# 1) Arrancar MariaDB
-# 2) Crear base de datos si no existe
-# 3) Crear usuario si no existe
-# 4) Dar permisos
-# 5) Mantener MariaDB ejecutándose en primer plano
+# Problema del enfoque anterior:
+# - `service mariadb start` inicia mysqld (en background)
+# - luego `exec mysqld_safe` intenta iniciar OTRO mysqld
+# - resultado: "A mysqld process already exists" + reinicios en bucle
+#
+# En Docker la forma correcta es:
+# 1) Inicializar el datadir si está vacío (primer arranque)
+# 2) Arrancar MariaDB UNA sola vez como PID 1 (foreground)
 # =====================================
 
-# set -e hace que el script se detenga si ocurre cualquier error.
-# Esto evita que el contenedor siga corriendo en un estado incorrecto.
 set -e
 
-# Arrancamos el servicio MariaDB.
-# Esto permite que el cliente mysql pueda conectarse
-# y ejecutar comandos SQL.
-service mariadb start
+DATADIR="/var/lib/mysql"
+SOCKET="/run/mysqld/mysqld.sock"
 
-# Ejecutamos comandos SQL usando un heredoc.
-# Las variables MYSQL_* vienen del archivo .env
-# y serán inyectadas desde docker-compose.
-mysql -u root <<EOF
--- Crear la base de datos si no existe
-CREATE DATABASE IF NOT EXISTS ${MYSQL_DATABASE};
+# Aseguramos el directorio del socket (necesario en Debian)
+mkdir -p /run/mysqld
+chown -R mysql:mysql /run/mysqld
 
--- Crear el usuario si no existe
--- '%' permite conexiones desde otros contenedores (WordPress)
+# Aseguramos permisos del datadir (crítico si hay volumen montado)
+chown -R mysql:mysql "$DATADIR"
+
+# -------------------------------------
+# Primer arranque: si no existen las tablas del sistema, inicializamos
+# (esto evita re-crear usuarios/DB en cada reinicio)
+# -------------------------------------
+if [ ! -d "$DATADIR/mysql" ]; then
+  echo "[setup] Datadir vacío. Inicializando MariaDB..."
+
+  # Crea las tablas del sistema en el datadir
+  mariadb-install-db --user=mysql --datadir="$DATADIR" >/dev/null
+
+  # Arrancamos temporalmente sin red para configurar usuarios/DB
+  mysqld --user=mysql --datadir="$DATADIR" --skip-networking --socket="$SOCKET" &
+  pid="$!"
+
+  # Esperamos a que MariaDB esté listo
+  echo "[setup] Esperando a MariaDB..."
+  until mariadb-admin --socket="$SOCKET" ping >/dev/null 2>&1; do
+    sleep 1
+  done
+
+  # Creamos DB + usuario + permisos usando el socket local
+  echo "[setup] Creando DB/usuario..."
+  mariadb --protocol=socket --socket="$SOCKET" -u root <<EOF
+CREATE DATABASE IF NOT EXISTS \`${MYSQL_DATABASE}\`;
 CREATE USER IF NOT EXISTS '${MYSQL_USER}'@'%' IDENTIFIED BY '${MYSQL_PASSWORD}';
-
--- Asignar todos los permisos del usuario sobre la base de datos
-GRANT ALL PRIVILEGES ON ${MYSQL_DATABASE}.* TO '${MYSQL_USER}'@'%';
-
--- Aplicar los cambios de permisos
+GRANT ALL PRIVILEGES ON \`${MYSQL_DATABASE}\`.* TO '${MYSQL_USER}'@'%';
 FLUSH PRIVILEGES;
 EOF
 
-# Lanzamos MariaDB en primer plano.
-# exec reemplaza el proceso del script (PID 1) por mysqld_safe.
-# Esto es CRUCIAL en Docker para:
-# - manejo correcto de señales
-# - reinicios
-# - evitar procesos zombie
-exec mysqld_safe
+  # Apagamos el servidor temporal
+  echo "[setup] Cerrando servidor temporal..."
+  mariadb-admin --socket="$SOCKET" shutdown
 
+  # Esperamos a que termine
+  wait "$pid"
+
+  echo "[setup] Inicialización completada."
+fi
+
+# -------------------------------------
+# Arranque normal: MariaDB en foreground (PID 1)
+# -------------------------------------
+echo "[setup] Arrancando MariaDB (normal)..."
+exec mysqld --user=mysql --datadir="$DATADIR" --bind-address=0.0.0.0

@@ -53,11 +53,57 @@ services:
       # Necesaria para inicializar la base
       - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
 
+    volumes:
+      # Persistencia exigida por el subject:
+      # Los datos de MariaDB viven en el HOST (VM)
+      # en /home/<login>/data/mariadb
+      - /home/aurodrig/data/mariadb:/var/lib/mysql
+
+
     # Conectamos el contenedor a una red Docker dedicada
     # Esto permite que otros servicios (WordPress)
     # se comuniquen usando el nombre "mariadb"
     networks:
       - inception
+  # -----------------------------------------------
+  # Servicio WordPress (PHP-FPM)
+  # -----------------------------------------------
+  wordpress:
+
+    # Construimos la imagen desde nuestro Dockerfile propio
+    # (prohibido usar imagen wordpress:php-fpm ya hecha)
+    build: ./requirements/wordpress
+
+    # Nombre del contenedor (mismo criterio que mariadb)
+    container_name: wordpress
+
+    # Reinicio automático si falla (requisito del subject)
+    restart: unless-stopped
+
+    # Cargamos variables desde .env (credenciales y config)
+    env_file:
+      - .env
+
+    environment:
+      # Host de MariaDB dentro de la red Docker:
+      # es el nombre del servicio "mariadb"
+      - MYSQL_HOST=mariadb
+
+    volumes:
+      # Persistencia exigida por el subject:
+      # Archivos del sitio (WordPress core, uploads, wp-config.php, etc.)
+      # viven en el HOST (VM) en /home/<login>/data/wordpress
+      - /home/aurodrig/data/wordpress:/var/www/html
+
+    networks:
+      # Conectamos WordPress a la misma red interna
+      - inception
+
+    depends_on:
+      # Orden de arranque: primero mariadb, luego wordpress
+      # OJO: esto no espera "DB ready" al 100%, solo arranca antes.
+      # Por eso el setup.sh suele incluir un "wait" a la DB.
+      - mariadb
 
 
 # -----------------------------------------------
