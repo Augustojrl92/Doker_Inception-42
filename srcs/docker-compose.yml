@@ -1,0 +1,70 @@
+# =====================================================
+# docker-compose.yml
+# Proyecto Inception - 42
+#
+# Docker Compose permite definir y ejecutar
+# múltiples contenedores Docker como un solo servicio.
+#
+# En este paso SOLO levantamos MariaDB para probarla
+# de forma aislada, sin WordPress ni Nginx todavía.
+# =====================================================
+
+services:
+  # -----------------------------------------------
+  # Servicio MariaDB
+  # -----------------------------------------------
+  mariadb:
+
+    # build indica que Docker debe construir la imagen
+    # usando el Dockerfile que está en esta ruta.
+    # NO usamos imágenes preconstruidas (prohibido por el subject).
+    build: ./requirements/mariadb
+
+    # Nombre explícito del contenedor.
+    # El subject exige container_name igual al servicio.
+    container_name: mariadb
+
+    # Política de reinicio:
+    # - unless-stopped: el contenedor se reinicia si falla,
+    #   excepto si el usuario lo detiene manualmente.
+    restart: unless-stopped
+
+    # Cargamos variables desde el archivo .env
+    # Esto permite separar configuración del código
+    # y evitar hardcodear valores.
+    env_file:
+      - .env
+
+    environment:
+      # Nombre de la base de datos que se creará al arrancar
+      # Esta variable será usada dentro del setup.sh
+      - MYSQL_DATABASE=${MYSQL_DATABASE}
+
+      # Usuario de la base de datos (no root)
+      # WordPress usará este usuario para conectarse
+      - MYSQL_USER=${MYSQL_USER}
+
+      # Contraseña del usuario normal
+      # Por ahora la pasamos por .env para simplificar el test
+      # Más adelante se moverá a secrets/
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+
+      # Contraseña del usuario root de MariaDB
+      # Necesaria para inicializar la base
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+
+    # Conectamos el contenedor a una red Docker dedicada
+    # Esto permite que otros servicios (WordPress)
+    # se comuniquen usando el nombre "mariadb"
+    networks:
+      - inception
+
+
+# -----------------------------------------------
+# Definición de redes
+# -----------------------------------------------
+networks:
+  inception:
+    # Bridge es el driver por defecto de Docker
+    # Crea una red aislada interna para los contenedores
+    driver: bridge
