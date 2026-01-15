@@ -5,8 +5,10 @@
 # Docker Compose permite definir y ejecutar
 # múltiples contenedores Docker como un solo servicio.
 #
-# En este paso SOLO levantamos MariaDB para probarla
-# de forma aislada, sin WordPress ni Nginx todavía.
+# En este punto levantamos:
+# - MariaDB
+# - WordPress (php-fpm)
+# - NGINX (HTTPS)
 # =====================================================
 
 services:
@@ -104,6 +106,81 @@ services:
       # OJO: esto no espera "DB ready" al 100%, solo arranca antes.
       # Por eso el setup.sh suele incluir un "wait" a la DB.
       - mariadb
+  
+  # -----------------------------------------------
+  # Servicio NGINX (HTTPS + reverse proxy)
+  # -----------------------------------------------
+  nginx:
+
+    # build:
+    # Construimos la imagen de NGINX desde nuestro Dockerfile propio.
+    # El subject prohíbe usar imágenes ya hechas (nginx:latest, etc).
+    build: ./requirements/nginx
+
+    # container_name:
+    # Nombre explícito del contenedor.
+    # Debe coincidir con el nombre del servicio (criterio del subject).
+    container_name: nginx
+
+    # restart:
+    # Política de reinicio automático.
+    # - unless-stopped: el contenedor se reinicia si falla,
+    #   excepto si el usuario lo detiene manualmente.
+    restart: unless-stopped
+
+    # env_file:
+    # Cargamos variables de entorno desde .env.
+    # Aquí se usa principalmente para DOMAIN_NAME,
+    # que se emplea en el certificado TLS y/o configuración.
+    env_file:
+      - .env
+
+    # ports:
+    # Mapeo de puertos HOST:CONTENEDOR.
+    #
+    # - 443: puerto HTTPS estándar en el host (la VM)
+    # - 443: puerto interno donde escucha NGINX
+    #
+    # Es el ÚNICO servicio que expone puertos al host,
+    # tal como exige el subject (no exponer MariaDB ni PHP).
+    ports:
+      - "8443:443"
+
+    # volumes:
+    # Volumen compartido entre:
+    # - NGINX (sirve los archivos)
+    # - WordPress (los genera/modifica)
+    #
+    # /home/<login>/data/wordpress  -> datos persistentes en el HOST (VM)
+    # /var/www/html                -> raíz del sitio dentro del contenedor
+    #
+    # Esto garantiza:
+    # - persistencia
+    # - separación código / datos
+    # - cumplimiento del subject
+    volumes:
+      - /home/aurodrig/data/wordpress:/var/www/html
+
+    # networks:
+    # Conectamos NGINX a la red Docker interna "inception".
+    #
+    # Gracias a esta red:
+    # - NGINX puede resolver "wordpress" por DNS
+    # - se comunica con PHP-FPM vía FastCGI (wordpress:9000)
+    networks:
+      - inception
+
+    # depends_on:
+    # Define el orden de arranque:
+    # - WordPress debe arrancar antes que NGINX
+    #
+    # IMPORTANTE:
+    # depends_on NO espera a que WordPress esté "listo",
+    # solo garantiza que el contenedor exista.
+    # La lógica real de readiness se maneja en los scripts.
+    depends_on:
+      - wordpress
+
 
 
 # -----------------------------------------------
