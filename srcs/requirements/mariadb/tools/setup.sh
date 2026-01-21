@@ -1,71 +1,72 @@
 #!/bin/sh
-# =====================================
-# Script de inicialización de MariaDB
+# ==========================================================
+# setup.sh - Inicializacion de MariaDB (Docker)
 # Proyecto Inception - 42
 #
-# Problema del enfoque anterior:
-# - `service mariadb start` inicia mysqld (en background)
-# - luego `exec mysqld_safe` intenta iniciar OTRO mysqld
-# - resultado: "A mysqld process already exists" + reinicios en bucle
+# OBJETIVO:
+#   - Inicializar el datadir SOLO la primera vez (si esta vacio)
+#   - Crear DB + usuario WordPress + aplicar password de root
+#   - Arrancar MariaDB UNA SOLA VEZ en foreground como PID 1
 #
-# En Docker la forma correcta es:
-# 1) Inicializar el datadir si está vacío (primer arranque)
-# 2) Arrancar MariaDB UNA sola vez como PID 1 (foreground)
-# =====================================
+# NOTA PID 1:
+#   En Docker, el proceso principal debe quedarse en foreground para
+#   recibir senales (SIGTERM/SIGINT) y hacer un shutdown limpio.
+# ==========================================================
 
-set -e
+set -e # Corta el script si un comando falla, evitando estados incoherentes.
 
-DATADIR="/var/lib/mysql"
-SOCKET="/run/mysqld/mysqld.sock"
+DATADIR="/var/lib/mysql" # Ruta del datadir donde MariaDB guarda los datos.
+SOCKET="/run/mysqld/mysqld.sock" # Socket local para conexiones sin red.
 
-# Aseguramos el directorio del socket (necesario en Debian)
-mkdir -p /run/mysqld
-chown -R mysql:mysql /run/mysqld
+mkdir -p /run/mysqld # Crea el directorio del socket si no existe.
+chown -R mysql:mysql /run/mysqld # Asegura permisos del usuario mysql.
 
-# Aseguramos permisos del datadir (crítico si hay volumen montado)
-chown -R mysql:mysql "$DATADIR"
+chown -R mysql:mysql "$DATADIR" # Permisos correctos sobre el datadir.
 
-# -------------------------------------
-# Primer arranque: si no existen las tablas del sistema, inicializamos
-# (esto evita re-crear usuarios/DB en cada reinicio)
-# -------------------------------------
-if [ ! -d "$DATADIR/mysql" ]; then
-  echo "[setup] Datadir vacío. Inicializando MariaDB..."
+# Si no existe la base del sistema, es primer arranque.
+if [ ! -d "$DATADIR/mysql" ]; then # Detecta si el datadir esta vacio.
+  echo "[setup] Datadir vacio. Inicializando MariaDB..." # Log informativo.
 
-  # Crea las tablas del sistema en el datadir
-  mariadb-install-db --user=mysql --datadir="$DATADIR" >/dev/null
+  mariadb-install-db --user=mysql --datadir="$DATADIR" >/dev/null # Inicializa tablas.
 
-  # Arrancamos temporalmente sin red para configurar usuarios/DB
-  mysqld --user=mysql --datadir="$DATADIR" --skip-networking --socket="$SOCKET" &
-  pid="$!"
+  mysqld --user=mysql --datadir="$DATADIR" --skip-networking --socket="$SOCKET" & # Arranque temporal.
+  pid="$!" # Guarda el PID para cerrar el proceso temporal luego.
 
-  # Esperamos a que MariaDB esté listo
-  echo "[setup] Esperando a MariaDB..."
-  until mariadb-admin --socket="$SOCKET" ping >/dev/null 2>&1; do
-    sleep 1
+  echo "[setup] Esperando a MariaDB..." # Log de espera.
+  until mariadb-admin --socket="$SOCKET" ping >/dev/null 2>&1; do # Espera disponibilidad.
+    sleep 1 # Pausa corta entre reintentos.
   done
 
-  # Creamos DB + usuario + permisos usando el socket local
-  echo "[setup] Creando DB/usuario..."
-  mariadb --protocol=socket --socket="$SOCKET" -u root <<EOF
+  echo "[setup] Creando DB/usuario..." # Log antes del SQL.
+  mariadb --protocol=socket --socket="$SOCKET" -u root <<'EOF_SQL'
+-- Base de datos para WordPress (idempotente)
 CREATE DATABASE IF NOT EXISTS \`${MYSQL_DATABASE}\`;
+
+-- Usuario WordPress: '%' permite conexion desde otros contenedores
 CREATE USER IF NOT EXISTS '${MYSQL_USER}'@'%' IDENTIFIED BY '${MYSQL_PASSWORD}';
+
+-- Permisos del usuario WordPress sobre su base
 GRANT ALL PRIVILEGES ON \`${MYSQL_DATABASE}\`.* TO '${MYSQL_USER}'@'%';
+
+-- Root con password local (evita root sin password)
+ALTER USER 'root'@'localhost' IDENTIFIED BY '${MYSQL_ROOT_PASSWORD}';
+
+-- Root remoto dentro de la red Docker (util para debug)
+CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED BY '${MYSQL_ROOT_PASSWORD}';
+GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;
+
+-- Aplica cambios de privilegios
 FLUSH PRIVILEGES;
-EOF
+EOF_SQL
 
-  # Apagamos el servidor temporal
-  echo "[setup] Cerrando servidor temporal..."
-  mariadb-admin --socket="$SOCKET" shutdown
+  echo "[setup] Cerrando servidor temporal..." # Log de cierre.
+  mariadb-admin --socket="$SOCKET" shutdown # Apaga el mysqld temporal.
 
-  # Esperamos a que termine
-  wait "$pid"
+  wait "$pid" # Espera a que el proceso temporal termine.
 
-  echo "[setup] Inicialización completada."
+  echo "[setup] Inicializacion completada." # Log final del primer arranque.
 fi
 
-# -------------------------------------
-# Arranque normal: MariaDB en foreground (PID 1)
-# -------------------------------------
-echo "[setup] Arrancando MariaDB (normal)..."
-exec mysqld --user=mysql --datadir="$DATADIR" --bind-address=0.0.0.0
+# Arranque normal: mysqld en foreground como PID 1.
+echo "[setup] Arrancando MariaDB (normal)..." # Log de arranque final.
+exec mysqld --user=mysql --datadir="$DATADIR" --bind-address=0.0.0.0 # PID 1 real.
