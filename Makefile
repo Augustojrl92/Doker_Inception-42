@@ -37,7 +37,7 @@ URL  = https://$(HOST):$(PORT)
 # -----------------------------------------------
 # Targets
 # -----------------------------------------------
-.PHONY: all up down build re ps logs nginx-logs wp-logs db-logs exec-nginx exec-wp exec-db status clean fclean
+.PHONY: all up down build re ps logs nginx-logs wp-logs db-logs exec-nginx exec-wp exec-db status clean fclean clean-evaluate
 
 # Target por defecto
 all: up
@@ -130,3 +130,11 @@ clean: down
 # - NO borra /home/<login>/data (bind mounts) a menos que tú los borres a mano
 fclean:
 	$(DC) down --rmi all -v --remove-orphans
+
+# Limpieza total estilo evaluador (borra TODO en Docker)
+clean-evaluate:
+	docker stop $$(docker ps -qa) || true
+	docker rm $$(docker ps -qa) || true
+	docker rmi -f $$(docker images -qa) || true
+	docker volume rm $$(docker volume ls -q) || true
+	docker network rm $$(docker network ls -q) 2>/dev/null || true

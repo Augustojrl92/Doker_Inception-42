@@ -59,7 +59,7 @@ services:
       # Persistencia exigida por el subject:
       # Los datos de MariaDB viven en el HOST (VM)
       # en /home/<login>/data/mariadb
-      - /home/aurodrig/data/mariadb:/var/lib/mysql
+      - mariadb_data:/var/lib/mysql
 
 
     # Conectamos el contenedor a una red Docker dedicada
@@ -95,7 +95,7 @@ services:
       # Persistencia exigida por el subject:
       # Archivos del sitio (WordPress core, uploads, wp-config.php, etc.)
       # viven en el HOST (VM) en /home/<login>/data/wordpress
-      - /home/aurodrig/data/wordpress:/var/www/html
+      - wordpress_data:/var/www/html
 
     networks:
       # Conectamos WordPress a la misma red interna
@@ -159,7 +159,7 @@ services:
     # - separación código / datos
     # - cumplimiento del subject
     volumes:
-      - /home/aurodrig/data/wordpress:/var/www/html
+      - wordpress_data:/var/www/html
 
     # networks:
     # Conectamos NGINX a la red Docker interna "inception".
@@ -191,3 +191,20 @@ networks:
     # Bridge es el driver por defecto de Docker
     # Crea una red aislada interna para los contenedores
     driver: bridge
+
+# -----------------------------------------------
+# Volúmenes (bind mounts gestionados por Docker)
+# -----------------------------------------------
+volumes:
+  mariadb_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /home/aurodrig/data/mariadb
+  wordpress_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /home/aurodrig/data/wordpress

@@ -1,4 +1,4 @@
-*This project has been created as part of the 42 curriculum by aurodrig*
+*This project has been created as part of the 42 curriculum by aurodrig.*
 
 # Description
 This project builds a small Docker-based infrastructure for the 42 Inception subject.
@@ -13,6 +13,23 @@ Data is persisted on the host under `/home/<login>/data`.
 - WordPress uses php-fpm (no nginx inside the WP container).
 - MariaDB runs as a dedicated database container.
 - Volumes map to host paths in /home/<login>/data for persistence.
+
+## Oral explanations (evaluation)
+### How Docker and Docker Compose work
+Docker builds images (immutable templates) and runs containers from them. Containers share the host kernel but remain isolated.
+Docker Compose defines multiple services in a single file and orchestrates build/run, networking, and volumes as one stack.
+
+### Image usage with and without Compose
+Without Compose, you run each container manually with `docker run` and manage networks/volumes yourself.
+With Compose, the file declares all services, dependencies, networks and volumes, and `docker compose up` manages them together.
+
+### Benefits of Docker vs VMs
+VMs run full operating systems and are heavier in CPU/RAM/disk. Docker shares the host kernel, starts faster,
+uses fewer resources, and makes service stacks reproducible.
+
+### Why this directory structure
+The subject requires `srcs/` to contain all configuration, and a root `Makefile` to orchestrate the build.
+This separation keeps code and config organized, and makes evaluation/review predictable.
 
 ## Sources included in this repository
 - `Makefile` at repository root for lifecycle commands.
