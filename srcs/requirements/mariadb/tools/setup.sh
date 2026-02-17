@@ -23,22 +23,9 @@ chown -R mysql:mysql /run/mysqld # Asegura permisos del usuario mysql.
 
 chown -R mysql:mysql "$DATADIR" # Permisos correctos sobre el datadir.
 
-# Si no existe la base del sistema, es primer arranque.
-if [ ! -d "$DATADIR/mysql" ]; then # Detecta si el datadir esta vacio.
-  echo "[setup] Datadir vacio. Inicializando MariaDB..." # Log informativo.
-
-  mariadb-install-db --user=mysql --datadir="$DATADIR" >/dev/null # Inicializa tablas.
-
-  mysqld --user=mysql --datadir="$DATADIR" --skip-networking --socket="$SOCKET" & # Arranque temporal.
-  pid="$!" # Guarda el PID para cerrar el proceso temporal luego.
-
-  echo "[setup] Esperando a MariaDB..." # Log de espera.
-  until mariadb-admin --socket="$SOCKET" ping >/dev/null 2>&1; do # Espera disponibilidad.
-    sleep 1 # Pausa corta entre reintentos.
-  done
-
-  echo "[setup] Creando DB/usuario..." # Log antes del SQL.
-  mariadb --protocol=socket --socket="$SOCKET" -u root <<'EOF_SQL'
+ensure_wp_db_user() {
+  echo "[setup] Asegurando DB/usuario WordPress..." # Idempotente; se puede ejecutar en cada arranque.
+  mariadb --protocol=socket --socket="$SOCKET" -u root -p"$MYSQL_ROOT_PASSWORD" <<EOF_SQL
 -- Base de datos para WordPress (idempotente)
 CREATE DATABASE IF NOT EXISTS \`${MYSQL_DATABASE}\`;
 
@@ -58,6 +45,23 @@ GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;
 -- Aplica cambios de privilegios
 FLUSH PRIVILEGES;
 EOF_SQL
+}
+
+# Si no existe la base del sistema, es primer arranque.
+if [ ! -d "$DATADIR/mysql" ]; then # Detecta si el datadir esta vacio.
+  echo "[setup] Datadir vacio. Inicializando MariaDB..." # Log informativo.
+
+  mariadb-install-db --user=mysql --datadir="$DATADIR" >/dev/null # Inicializa tablas.
+
+  mysqld --user=mysql --datadir="$DATADIR" --skip-networking --socket="$SOCKET" & # Arranque temporal.
+  pid="$!" # Guarda el PID para cerrar el proceso temporal luego.
+
+  echo "[setup] Esperando a MariaDB..." # Log de espera.
+  until mariadb-admin --socket="$SOCKET" ping >/dev/null 2>&1; do # Espera disponibilidad.
+    sleep 1 # Pausa corta entre reintentos.
+  done
+
+  ensure_wp_db_user
 
   echo "[setup] Cerrando servidor temporal..." # Log de cierre.
   mariadb-admin --socket="$SOCKET" shutdown # Apaga el mysqld temporal.
