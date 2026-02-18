@@ -9,7 +9,8 @@
 #   3) Crear wp-config.php si no existe (credenciales DB)
 #   4) Instalar WordPress automaticamente (SOLO 1 vez)
 #   5) Crear un usuario normal (SOLO 1 vez)
-#   6) Arrancar PHP-FPM en foreground (PID 1)
+#   6) Configurar bonus Redis cache (idempotente)
+#   7) Arrancar PHP-FPM en foreground (PID 1)
 #
 # NOTA:
 #   - Este contenedor NO incluye NGINX.
@@ -102,7 +103,29 @@ else
 fi
 
 # ----------------------------------------------------------
-# 7) Arrancar PHP-FPM en foreground (PID 1)
+# 7) Bonus: Redis cache (idempotente)
+# ----------------------------------------------------------
+# Solo tiene sentido si WP ya esta instalado y WP-CLI puede operar.
+if wp core is-installed --allow-root >/dev/null 2>&1; then
+  echo "[wp] Configurando Redis cache..."
+
+  # Definimos host/puerto de Redis en wp-config.php de forma idempotente.
+  wp config set WP_REDIS_HOST 'redis' --type=constant --allow-root >/dev/null 2>&1 || true
+  wp config set WP_REDIS_PORT 6379 --raw --type=constant --allow-root >/dev/null 2>&1 || true
+
+  # Instala y activa el plugin oficial de Redis para WordPress.
+  if ! wp plugin is-installed redis-cache --allow-root >/dev/null 2>&1; then
+    wp plugin install redis-cache --activate --allow-root || true
+  else
+    wp plugin activate redis-cache --allow-root >/dev/null 2>&1 || true
+  fi
+
+  # Activa object cache si Redis ya responde.
+  wp redis enable --allow-root >/dev/null 2>&1 || true
+fi
+
+# ----------------------------------------------------------
+# 8) Arrancar PHP-FPM en foreground (PID 1)
 # ----------------------------------------------------------
 # PHP-FPM necesita /run/php para crear su PID file.
 mkdir -p /run/php

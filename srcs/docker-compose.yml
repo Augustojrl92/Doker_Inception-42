@@ -29,6 +29,7 @@ services:
       - inception
     depends_on:
       - mariadb
+      - redis
 
   nginx:
     build: ./requirements/nginx
@@ -37,13 +38,59 @@ services:
     env_file:
       - .env
     ports:
-      - "443:443"
+      - "9443:443"
     volumes:
       - wordpress_data:/var/www/html
     networks:
       - inception
     depends_on:
       - wordpress
+
+  adminer:
+    build: ./requirements/adminer
+    container_name: adminer
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    networks:
+      - inception
+    depends_on:
+      - mariadb
+
+  redis:
+    build: ./requirements/redis
+    container_name: redis
+    restart: unless-stopped
+    networks:
+      - inception
+
+  ftp:
+    build: ./requirements/ftp
+    container_name: ftp
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - FTP_USER=${FTP_USER}
+      - FTP_PASSWORD=${FTP_PASSWORD}
+    ports:
+      - "2121:21"
+      - "21000-21010:21000-21010"
+    volumes:
+      - wordpress_data:/srv/ftp
+    networks:
+      - inception
+    depends_on:
+      - wordpress
+
+  static_site:
+    build: ./requirements/static_site
+    container_name: static_site
+    restart: unless-stopped
+    ports:
+      - "8082:8080"
+    networks:
+      - inception
 
 networks:
   inception:
