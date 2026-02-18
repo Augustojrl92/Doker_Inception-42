@@ -51,14 +51,6 @@ networks:
 
 volumes:
   mariadb_data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /home/aurodrig/data/mariadb
+    name: mariadb_data
   wordpress_data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /home/aurodrig/data/wordpress
+    name: wordpress_data

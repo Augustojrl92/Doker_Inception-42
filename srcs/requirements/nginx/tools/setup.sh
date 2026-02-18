@@ -24,5 +24,12 @@ if [ ! -f "$CERT" ] || [ ! -f "$KEY" ]; then
     -subj "/C=FR/ST=IDF/L=Paris/O=42/OU=Inception/CN=${DOMAIN_NAME}"
 fi
 
+# Espera a que PHP-FPM (contenedor wordpress) este escuchando antes de levantar nginx.
+# Evita 502 temporales justo despues de un down/up.
+echo "[nginx] Esperando a wordpress:9000..."
+while ! nc -z wordpress 9000 >/dev/null 2>&1; do
+  sleep 1
+done
+
 echo "[nginx] Arrancando NGINX..."
 exec nginx -g "daemon off;"

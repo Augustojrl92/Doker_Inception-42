@@ -71,6 +71,18 @@ if [ ! -d "$DATADIR/mysql" ]; then # Detecta si el datadir esta vacio.
   echo "[setup] Inicializacion completada." # Log final del primer arranque.
 fi
 
+# En stacks con volmen persistente ya inicializado, igualmente necesitamos
+# asegurar que existen la DB/usuario de WordPress (subject: idempotencia).
+echo "[setup] Verificando DB/usuario WordPress en cada arranque..."
+mysqld --user=mysql --datadir="$DATADIR" --skip-networking --socket="$SOCKET" &
+pid="$!"
+until mariadb-admin --socket="$SOCKET" ping >/dev/null 2>&1; do
+  sleep 1
+done
+ensure_wp_db_user
+mysqladmin --protocol=socket --socket="$SOCKET" -u root -p"$MYSQL_ROOT_PASSWORD" shutdown
+wait "$pid"
+
 # Arranque normal: mysqld en foreground como PID 1.
 echo "[setup] Arrancando MariaDB (normal)..." # Log de arranque final.
 exec mysqld --user=mysql --datadir="$DATADIR" --bind-address=0.0.0.0 # PID 1 real.
