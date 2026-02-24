@@ -92,6 +92,20 @@ services:
     networks:
       - inception
 
+  portainer:
+    build: ./requirements/portainer
+    container_name: portainer
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    volumes:
+      - portainer_data:/data
+      - ${DOCKER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock
+    secrets:
+      - portainer_admin_password
+    networks:
+      - inception
+
 networks:
   inception:
     driver: bridge
@@ -101,3 +115,9 @@ volumes:
     name: mariadb_data
   wordpress_data:
     name: wordpress_data
+  portainer_data:
+    name: portainer_data
+
+secrets:
+  portainer_admin_password:
+    file: ./secrets/portainer_admin_password
