@@ -1,123 +1,305 @@
+# ==========================================================
+# docker-compose.yml - Orquestación de Inception (mandatory + bonus)
+# Proyecto Inception - 42
+#
+# QUE ES ESTE ARCHIVO:
+#   Este YAML le dice a Docker Compose cómo construir y ejecutar
+#   toda la infraestructura del proyecto:
+#     - Qué contenedores existen (services)
+#     - Qué red comparten (networks)
+#     - Qué datos persisten en disco (volumes)
+#     - Qué secretos se inyectan de forma controlada (secrets)
+#
+# IDEA CLAVE:
+#   Docker Compose actúa como "director de orquesta":
+#   levanta varios contenedores relacionados con un solo comando
+#   y mantiene una configuración declarativa reproducible.
+#
+# ESTRUCTURA GENERAL:
+#   1) services: definición de cada aplicación/contenedor
+#   2) networks: conectividad interna entre servicios
+#   3) volumes: persistencia de datos entre reinicios
+#   4) secrets: archivos sensibles montados en runtime
+#
+# FLUJO FUNCIONAL:
+#   - mariadb almacena datos
+#   - wordpress usa mariadb (y redis en bonus)
+#   - nginx expone WordPress por HTTPS
+#   - bonus añade adminer/redis/ftp/static_site/portainer
+# ==========================================================
+
+# Lista principal de servicios.
+# Cada bloque define un contenedor independiente con su propósito.
 services:
+  # Servicio de base de datos MariaDB para WordPress.
   mariadb:
+    # Ruta del Dockerfile que construye la imagen de MariaDB.
+    # Compose ejecuta `docker build` en este directorio.
     build: ./requirements/mariadb
+    # Nombre fijo del contenedor.
+    # Ventaja: comandos de diagnóstico más sencillos
+    # (ej.: `docker logs mariadb`).
     container_name: mariadb
+    # Política de reinicio:
+    # `unless-stopped` reinicia automáticamente tras caídas o reinicio
+    # del host, salvo que tú lo hayas detenido manualmente.
     restart: unless-stopped
+    # Carga variables desde `.env` (mismo archivo para varios servicios).
+    # Esto evita hardcodear credenciales en el YAML.
     env_file:
       - .env
+    # Variables de entorno concretas que consume el setup de MariaDB.
+    # Se interpolan desde `.env` en tiempo de ejecución.
     environment:
       - MYSQL_DATABASE=${MYSQL_DATABASE}
       - MYSQL_USER=${MYSQL_USER}
       - MYSQL_PASSWORD=${MYSQL_PASSWORD}
       - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+    # Volumen persistente:
+    # mapea almacenamiento de base de datos a un volumen Docker nombrado,
+    # para no perder información al recrear/eliminar contenedores.
     volumes:
       - mariadb_data:/var/lib/mysql
+    # Red interna del proyecto.
+    # Permite que otros servicios conecten por nombre DNS `mariadb`.
     networks:
       - inception
 
+  # Servicio WordPress + PHP-FPM.
   wordpress:
+    # Build de imagen custom WordPress (PHP-FPM + setup propio).
     build: ./requirements/wordpress
+    # Nombre fijo del contenedor para depuración y comandos directos.
     container_name: wordpress
+    # Reinicio automático salvo parada manual.
     restart: unless-stopped
+    # Carga variables globales desde `.env`.
     env_file:
       - .env
+    # Host de base de datos dentro de la red Docker.
+    # Aquí `mariadb` no es IP: es el nombre del servicio.
     environment:
       - MYSQL_HOST=mariadb
+    # Volumen persistente del sitio WordPress:
+    # plugins, themes, uploads y wp-config permanecen tras reinicios.
     volumes:
       - wordpress_data:/var/www/html
+    # Conectado a la red privada del proyecto.
     networks:
       - inception
+    # Dependencias de arranque.
+    # `depends_on` no garantiza "servicio listo", solo orden de inicio.
+    # La espera real se maneja en scripts de setup.
     depends_on:
       - mariadb
       - redis
 
+  # Reverse proxy y terminación TLS.
   nginx:
+    # Imagen custom de NGINX (config TLS + proxy a php-fpm).
     build: ./requirements/nginx
+    # Nombre fijo del contenedor.
     container_name: nginx
+    # Reinicio automático ante caída del proceso.
     restart: unless-stopped
+    # Variables globales para dominio/certificados, etc.
     env_file:
       - .env
+    # Publicación de puertos:
+    # host:contenedor -> 9443:443
+    # Esto permite acceder desde el host por https://127.0.0.1:9443.
+    # (En entorno rootful final puedes usar 443:443).
     ports:
       - "9443:443"
+    # Comparte volumen con WordPress para servir archivos del sitio.
+    # NGINX lee el contenido y delega PHP a php-fpm.
     volumes:
       - wordpress_data:/var/www/html
+    # Red interna compartida con el resto.
     networks:
       - inception
+    # Orden de inicio: WordPress antes de NGINX.
     depends_on:
       - wordpress
 
+  # Panel visual para gestionar MariaDB desde navegador.
   adminer:
+    # Imagen custom de Adminer.
     build: ./requirements/adminer
+    # Nombre fijo.
     container_name: adminer
+    # Reinicio automático.
     restart: unless-stopped
+    # Exposición web de Adminer.
+    # host:8081 -> contenedor:8080
     ports:
       - "8081:8080"
+    # Red interna para hablar con MariaDB por DNS (`mariadb`).
     networks:
       - inception
+    # Arranque ordenado tras MariaDB.
     depends_on:
       - mariadb
 
+  # Cache de objetos para WordPress.
   redis:
+    # Imagen Redis custom.
     build: ./requirements/redis
+    # Nombre fijo.
     container_name: redis
+    # Reinicio automático.
     restart: unless-stopped
+    # Solo red interna (no expone puerto al host).
     networks:
       - inception
 
+  # Servidor FTP apuntando al volumen de WordPress.
   ftp:
+    # Imagen FTP custom (vsftpd).
     build: ./requirements/ftp
+    # Nombre fijo.
     container_name: ftp
+    # Reinicio automático.
     restart: unless-stopped
+    # Carga `.env` para usuario/clave FTP.
     env_file:
       - .env
+    # Variables FTP que consume el setup.sh.
     environment:
       - FTP_USER=${FTP_USER}
       - FTP_PASSWORD=${FTP_PASSWORD}
+    # Publicación de puertos FTP:
+    #  - 21 control (mapeado en host como 2121)
+    #  - 21000-21010 rango pasivo para transferencia de datos
     ports:
       - "2121:21"
       - "21000-21010:21000-21010"
+    # Apunta al mismo volumen de WordPress para gestionar archivos
+    # del sitio vía FTP.
     volumes:
       - wordpress_data:/srv/ftp
+    # Red interna.
     networks:
       - inception
+    # Orden de inicio: WordPress primero.
     depends_on:
       - wordpress
 
+  # Sitio estático bonus (sin PHP).
   static_site:
+    # Imagen custom para web estática.
     build: ./requirements/static_site
+    # Nombre fijo.
     container_name: static_site
+    # Reinicio automático.
     restart: unless-stopped
+    # Publica sitio estático en host:8082.
     ports:
       - "8082:8080"
+    # Red interna.
     networks:
       - inception
 
+  # Portainer para administración visual de Docker.
   portainer:
+    # Imagen custom de Portainer CE.
     build: ./requirements/portainer
+    # Nombre fijo.
     container_name: portainer
+    # Reinicio automático.
     restart: unless-stopped
+    # Interfaz web de Portainer.
     ports:
       - "9000:9000"
+    # Montajes:
+    # 1) /data persistente de Portainer
+    # 2) socket Docker del host para listar/gestionar contenedores
+    #    (rootful: /var/run/docker.sock, rootless configurable con DOCKER_SOCK).
     volumes:
       - portainer_data:/data
       - ${DOCKER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock
+    # Secret con hash bcrypt para inicializar password admin.
     secrets:
       - portainer_admin_password
+    # Red interna.
     networks:
       - inception
 
+# Redes Docker definidas por este compose.
 networks:
+  # Red tipo bridge:
+  # Docker crea un segmento virtual donde cada servicio recibe DNS interno.
   inception:
     driver: bridge
 
+# Volúmenes nombrados para persistencia.
 volumes:
+  # Persistencia de datos de MariaDB.
   mariadb_data:
     name: mariadb_data
+  # Persistencia de contenido de WordPress.
   wordpress_data:
     name: wordpress_data
+  # Persistencia de configuración de Portainer.
   portainer_data:
     name: portainer_data
 
+# Secrets consumidos por servicios (no deberían subirse a git).
 secrets:
+  # Archivo con hash bcrypt del password admin inicial de Portainer.
+  # Ruta relativa al directorio del compose: srcs/secrets/...
   portainer_admin_password:
     file: ./secrets/portainer_admin_password
+
+# ==========================================================
+# CONCLUSION (RESUMEN DE ESTUDIO)
+#
+# 1) QUE RESUELVE ESTE COMPOSE
+#    Este archivo convierte una infraestructura completa en una
+#    configuración declarativa: con un solo comando (`docker compose up`)
+#    puedes construir y levantar todos los servicios necesarios para
+#    Inception, en orden, con red común y almacenamiento persistente.
+#
+# 2) FLUJO PRINCIPAL ENTRE SERVICIOS
+#    - `mariadb` guarda los datos de aplicación.
+#    - `wordpress` consume la base de datos y genera contenido dinámico.
+#    - `nginx` expone el sitio al exterior por HTTPS y entrega contenido.
+#    - En bonus:
+#      - `redis` acelera caché de objetos.
+#      - `adminer` facilita administración visual de DB.
+#      - `ftp` permite gestionar archivos del volumen de WordPress.
+#      - `static_site` añade un sitio estático independiente.
+#      - `portainer` añade administración visual del motor Docker.
+#
+# 3) PERSISTENCIA Y DURABILIDAD
+#    Los volúmenes (`mariadb_data`, `wordpress_data`, `portainer_data`)
+#    evitan pérdida de datos al reiniciar contenedores o recrear el stack.
+#    Sin ellos, WordPress y MariaDB arrancarían "vacíos" tras cada rebuild.
+#
+# 4) RED Y COMUNICACION INTERNA
+#    La red `inception` permite resolución DNS por nombre de servicio
+#    (`mariadb`, `wordpress`, `redis`, etc.). Gracias a eso, no dependes
+#    de IPs fijas ni de configuración manual frágil.
+#
+# 5) SEGURIDAD BASICA Y DATOS SENSIBLES
+#    Variables sensibles se parametrizan en `.env` y, cuando aplica,
+#    se usan `secrets` (ej. `portainer_admin_password`) para separar
+#    credenciales del código y no hardcodearlas en Dockerfiles/scripts.
+#
+# 6) DIFERENCIA ENTRE MANDATORY Y BONUS
+#    Mandatory real: `mariadb`, `wordpress`, `nginx`.
+#    Bonus ampliado: `redis`, `adminer`, `ftp`, `static_site`, `portainer`.
+#    Esto te permite evaluar/defender por capas sin mezclar objetivos.
+#
+# 7) COMO AJUSTAR ESTE ENTORNO RAPIDO
+#    - Cambiar puertos: bloque `ports` del servicio correspondiente.
+#    - Cambiar credenciales: `.env` y/o archivos en `srcs/secrets/`.
+#    - Cambiar rutas persistentes: bloque `volumes`.
+#    - Cambiar dependencias/orden: bloque `depends_on`.
+#
+# 8) IDEA FINAL PARA DEFENSA
+#    Este compose demuestra exactamente lo que pide Inception:
+#    infraestructura reproducible, modular, persistente y explicable.
+#    Cada servicio está aislado en su contenedor, pero conectado de forma
+#    controlada por red, volúmenes y variables/secrets.
+# ==========================================================
