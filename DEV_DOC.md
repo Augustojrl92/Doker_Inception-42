@@ -38,7 +38,7 @@ Data is stored on the host in:
 - /home/<login>/data/mariadb
 - /home/<login>/data/wordpress
 
-These paths are bind-mounted into containers to preserve data across restarts.
+These named volumes are backed by host paths under `/home/<login>/data` to preserve data across restarts.
 
 ## Where configuration lives
 - docker-compose.yml: `srcs/docker-compose.yml`

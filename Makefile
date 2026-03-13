@@ -37,17 +37,22 @@ URL  = https://$(HOST):$(PORT)
 # -----------------------------------------------
 # Targets
 # -----------------------------------------------
-.PHONY: all up down build re ps logs nginx-logs wp-logs db-logs exec-nginx exec-wp exec-db status clean fclean clean-evaluate
+.PHONY: all prepare-data up down build re ps logs nginx-logs wp-logs db-logs exec-nginx exec-wp exec-db status evaluate clean fclean clean-evaluate
 
 # Target por defecto
 all: up
 
+# Directorios persistentes requeridos por el subject
+prepare-data:
+	mkdir -p /home/aurodrig/data/mariadb
+	mkdir -p /home/aurodrig/data/wordpress
+
 # Levantar servicios (sin rebuild)
-up:
+up: prepare-data
 	$(DC) up -d
 
 # Levantar servicios forzando rebuild de imágenes
-build:
+build: prepare-data
 	$(DC) up -d --build
 
 # Parar y borrar contenedores/red (NO borra datos del host en bind mounts)
@@ -117,6 +122,10 @@ status:
 	@curl -kI $(URL)/wp-admin/install.php | head -n 20 || true
 	@echo ""
 	@echo "✅ Si ves 200/302 y los mounts apuntan a /home/<login>/data, vas bien."
+
+# Checklist rapido basado en la evaluacion
+evaluate:
+	./scripts/evaluate.sh
 
 # -----------------------------------------------
 # Limpiezas

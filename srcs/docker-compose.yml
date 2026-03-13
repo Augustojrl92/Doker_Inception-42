@@ -113,8 +113,18 @@ networks:
 volumes:
   mariadb_data:
     name: mariadb_data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /home/aurodrig/data/mariadb
   wordpress_data:
     name: wordpress_data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /home/aurodrig/data/wordpress
   portainer_data:
     name: portainer_data
 
