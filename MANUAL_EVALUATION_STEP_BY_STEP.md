@@ -1328,37 +1328,234 @@ Recuerda:
 
 ## Bonus 1 - Redis cache
 
+Objetivo del bonus:
+
+- añadir cache a WordPress
+- reducir accesos repetidos a MariaDB
+- mejorar tiempos de respuesta en operaciones repetidas
+
+Arquitectura simple:
+
+```text
+Navegador
+   |
+ NGINX
+   |
+WordPress/PHP-FPM
+   | \
+   |  \--> Redis (cache)
+   |
+   ---> MariaDB (datos persistentes)
+```
+
+### 1. Dockerfile de Redis
+
 Comando:
 
 ```bash
-docker exec wordpress sh -lc "wp plugin is-installed redis-cache --allow-root --path=/var/www/html && wp plugin is-active redis-cache --allow-root --path=/var/www/html && wp redis status --allow-root --path=/var/www/html"
+sed -n '1,220p' srcs/requirements/redis/Dockerfile
+sed -n '1,220p' srcs/requirements/redis/tools/setup.sh
+```
+
+Que he comprobado:
+
+- Redis usa `FROM debian:bullseye`
+- instala `redis-server`
+- copia `setup.sh`
+- expone `6379`
+- arranca con `ENTRYPOINT ["/tools/setup.sh"]`
+
+Que hace `setup.sh`:
+
+- ejecuta `redis-server`
+- escucha en `0.0.0.0:6379`
+- usa `--protected-mode no`
+
+Que explico:
+
+- Redis corre en su propio contenedor bonus
+- no uso una imagen de Redis ya preparada como servicio final
+- arranca en foreground como proceso principal
+- `protected-mode no` permite conexiones desde otros contenedores de la red Docker
+
+### 2. Integracion con WordPress
+
+Comando:
+
+```bash
+grep -nE 'redis|WP_REDIS|redis-cache' srcs/requirements/wordpress/tools/setup.sh
+```
+
+Lineas importantes:
+
+```text
+wp config set WP_REDIS_HOST 'redis'
+wp config set WP_REDIS_PORT 6379
+wp plugin install redis-cache --activate
+wp redis enable
+```
+
+Que he comprobado:
+
+- WordPress se configura para usar Redis en el host `redis`
+- usa el puerto `6379`
+- instala y activa el plugin `redis-cache`
+- habilita el object cache con `wp redis enable`
+
+Que explico:
+
+- WordPress encuentra Redis por nombre de servicio Docker
+- la configuracion es idempotente
+- si reinicio el contenedor, el script asegura que Redis siga integrado
+
+### 3. Estado real del bonus Redis
+
+Prueba visual:
+
+- entrar en `https://aurodrig.42.fr/wp-admin`
+- ir a `Plugins`
+- localizar `Redis Object Cache`
+- enseñar que el plugin esta instalado y activo
+- si se abre su pagina de estado, enseñar que aparece conectado/habilitado
+
+Que he comprobado visualmente:
+
+- el plugin de Redis aparece activo en WordPress
+
+Como enlazarlo con la prueba tecnica:
+
+- primero enseño en WordPress que el plugin esta activo
+- despues confirmo por terminal que la conexion real a Redis funciona
+
+Comando:
+
+```bash
+docker exec wordpress sh -lc "wp redis status --allow-root --path=/var/www/html"
 ```
 
 Salida relevante:
 
 ```text
 Status: Connected
+Client: Predis (v2.4.0)
+Drop-in: Valid
+Disabled: No
 Ping: PONG
-Plugin Version: 2.7.0
-Redis Version: 6.0.16
 WP_REDIS_HOST: "redis"
 WP_REDIS_PORT: 6379
 ```
 
 Que he comprobado:
 
-- el plugin `redis-cache` esta instalado
-- el plugin esta activo
 - WordPress se conecta correctamente a Redis
 - Redis responde `PONG`
+- el drop-in de object cache es valido
+- la cache no esta deshabilitada
+- el cliente que usa WordPress es `Predis`
 
 Que explico:
 
 - Redis se usa como cache de objetos para WordPress
 - reduce lecturas repetidas a MariaDB
 - WordPress llega a Redis usando el nombre de servicio `redis`
+- visualmente el plugin esta activo
+- tecnicamente `wp redis status` demuestra la conexion real
+
+### 4. Preguntas tipicas de evaluacion
+
+¿Redis sustituye a MariaDB?
+
+- no
+- Redis es cache, MariaDB sigue siendo la base de datos principal
+
+¿Por que usas `redis` y no una IP?
+
+- porque dentro de la red Docker los servicios se resuelven por DNS interno
+- asi no dependo de IPs fijas
+
+¿Por que `protected-mode no`?
+
+- porque WordPress se conecta desde otro contenedor
+- necesito permitir conexiones internas dentro de la red Docker
+
+¿Que cliente usa WordPress?
+
+- `Predis`
+- se ve en `Client: Predis (v2.4.0)`
+
+### 5. Resumen oral corto de Redis
+
+Frase de 20 segundos:
+
+"Redis es un bonus de cache para WordPress. Lo levanto en un contenedor separado, escuchando en `6379` dentro de la red Docker. En el script de WordPress configuro `WP_REDIS_HOST=redis`, instalo el plugin `redis-cache` y activo el object cache. La prueba real es que `wp redis status` muestra `Status: Connected` y `Ping: PONG`, asi que WordPress esta usando Redis correctamente."
 
 ## Bonus 2 - FTP
+
+Objetivo del bonus:
+
+- exponer el volumen de WordPress por FTP
+- permitir acceso autenticado a los archivos del sitio
+- mantener una zona de escritura controlada
+
+Arquitectura simple:
+
+```text
+Cliente FTP
+   |
+ puerto 2121 + rango pasivo
+   |
+ [ FTP / vsftpd ]
+   |
+ volumen compartido
+   |
+ /srv/ftp  <-->  wordpress_data  <-->  archivos WordPress
+```
+
+### 1. Dockerfile y configuracion
+
+Comando:
+
+```bash
+sed -n '1,220p' srcs/requirements/ftp/Dockerfile
+sed -n '1,260p' srcs/requirements/ftp/conf/vsftpd.conf
+sed -n '1,260p' srcs/requirements/ftp/tools/setup.sh
+```
+
+Que he comprobado:
+
+- usa `FROM debian:bullseye`
+- instala `vsftpd`
+- expone `21` y `21000-21010`
+- copia una plantilla `vsftpd.conf`
+- arranca con `ENTRYPOINT ["/tools/setup.sh"]`
+
+Lineas importantes de configuracion:
+
+- `anonymous_enable=NO`
+- `local_enable=YES`
+- `write_enable=YES`
+- `chroot_local_user=YES`
+- `pasv_enable=YES`
+- `pasv_min_port=21000`
+- `pasv_max_port=21010`
+
+Que hace `setup.sh`:
+
+- crea el usuario FTP desde `FTP_USER` y `FTP_PASSWORD`
+- define la raiz FTP como `/srv/ftp`
+- crea `/srv/ftp/uploads`
+- da permisos al usuario FTP sobre `uploads`
+- renderiza la configuracion final
+- arranca `vsftpd` en foreground
+
+Que explico:
+
+- FTP esta en un contenedor separado
+- no permito acceso anonimo
+- uso modo pasivo porque FTP lo necesita bien en Docker/NAT
+- el volumen de WordPress se monta en `/srv/ftp`
+
+### 2. Login FTP y listado del volumen WordPress
 
 Comando:
 
@@ -1388,7 +1585,142 @@ Que explico:
 - permite acceder a los archivos del sitio desde fuera del contenedor
 - esta separado del mandatory y se expone por sus propios puertos bonus
 
+### 3. Carpeta `uploads` preparada para escritura
+
+Comando:
+
+```bash
+curl --silent --user ftpuser:ftp_pass_42 ftp://127.0.0.1:2121/uploads/ | head -n 20
+```
+
+Que he comprobado:
+
+- la carpeta `uploads/` existe
+- estaba vacia en el momento de la prueba
+
+Que explico:
+
+- `uploads/` es la zona de escritura preparada para el usuario FTP
+- la creo en el `setup.sh` para no tocar directamente el core del sitio
+
+### 4. Subida real de un archivo por FTP
+
+Comandos:
+
+```bash
+echo "ftp test" > /tmp/ftp_test.txt
+curl --user ftpuser:ftp_pass_42 -T /tmp/ftp_test.txt ftp://127.0.0.1:2121/uploads/ftp_test.txt
+curl --silent --user ftpuser:ftp_pass_42 ftp://127.0.0.1:2121/uploads/
+```
+
+Salida relevante de la subida:
+
+```text
+100     9    0     0  100     9
+```
+
+Que he comprobado:
+
+- la autenticacion FTP funciona
+- la subida del archivo se completa
+- el usuario FTP tiene permisos de escritura en `uploads/`
+
+Que explico:
+
+- no solo puedo listar el volumen, tambien puedo escribir en la carpeta preparada para ello
+- eso demuestra que el bonus FTP funciona como acceso real al almacenamiento compartido de WordPress
+
+### 5. Prueba visual fuerte del FTP
+
+Comandos:
+
+```bash
+ls -la /home/aurodrig/data/wordpress/uploads
+curl --silent --user ftpuser:ftp_pass_42 ftp://127.0.0.1:2121/uploads/
+```
+
+Salida relevante:
+
+```text
+-rw------- 1 aurodrig aurodrig    9 mar 14 06:05 ftp_test.txt
+```
+
+```text
+-rw-------    1 1000     1000            9 Mar 14 05:05 ftp_test.txt
+```
+
+Que he comprobado:
+
+- el archivo subido por FTP aparece en `/home/aurodrig/data/wordpress/uploads`
+- el mismo archivo tambien aparece al listar la carpeta por FTP
+
+Que explico:
+
+- FTP esta escribiendo realmente sobre el almacenamiento persistente de WordPress
+- no es un directorio aislado, es el mismo volumen compartido con el sitio
+
+### 6. Preguntas tipicas de evaluacion
+
+¿Por que expones mas puertos aparte del 21?
+
+- porque FTP en modo pasivo necesita puertos de datos adicionales
+- por eso publico `21000-21010`
+
+¿Por que creas `uploads/`?
+
+- para tener una zona de escritura controlada para el usuario FTP
+- asi no mezclo escritura arbitraria con el core de WordPress
+
+### 7. Resumen oral corto de FTP
+
+Frase de 20 segundos:
+
+"El bonus FTP levanta un contenedor `vsftpd` separado. Autentico con usuario y password creados desde variables de entorno, no permito acceso anonimo y monto el volumen de WordPress en `/srv/ftp`. Puedo listar los archivos del sitio y tambien subir archivos a `uploads/`, que es la zona de escritura preparada para el usuario FTP."
+
 ## Bonus 3 - Adminer
+
+Objetivo del bonus:
+
+- tener una interfaz web ligera para gestionar MariaDB
+- conectarse a la base desde navegador
+- demostrar administracion visual de la DB
+
+Arquitectura simple:
+
+```text
+Browser
+   |
+ http://127.0.0.1:8081
+   |
+ [ Adminer ]
+   |
+ [ MariaDB ]
+```
+
+### 1. Dockerfile y arranque
+
+Comando:
+
+```bash
+sed -n '1,220p' srcs/requirements/adminer/Dockerfile
+sed -n '1,220p' srcs/requirements/adminer/tools/setup.sh
+```
+
+Que he comprobado:
+
+- usa `FROM debian:bullseye`
+- instala `php7.4-cli`, `php7.4-mysql`, `curl`, `ca-certificates`
+- descarga Adminer como un unico `index.php`
+- expone `8080`
+- arranca con `php -S 0.0.0.0:8080 -t /var/www/html`
+
+Que explico:
+
+- Adminer esta en un contenedor bonus separado
+- no uso una imagen prefabricada de Adminer
+- lo sirvo con el servidor embebido de PHP porque es una app PHP muy ligera
+
+### 2. Prueba tecnica
 
 Comando:
 
@@ -1414,7 +1746,163 @@ Que explico:
 - Adminer es una interfaz web ligera para gestionar MariaDB
 - se usa como herramienta de administracion bonus
 
+### 3. Login visual en Adminer
+
+Campos para entrar:
+
+- `System`: `MySQL`
+- `Server`: `mariadb`
+- `Username`: `wp_user`
+- `Password`: `wp_pass`
+- `Database`: `wordpress`
+
+Explicacion de cada campo:
+
+#### `System: MySQL`
+
+- MariaDB es compatible con el protocolo y ecosistema MySQL
+- por eso en Adminer se elige `MySQL`
+
+Frase util:
+
+"Aunque el servidor sea MariaDB, en Adminer se usa la opcion MySQL porque es compatible con ese driver/protocolo."
+
+#### `Server: mariadb`
+
+- `mariadb` es el nombre del servicio en Docker Compose
+- dentro de la red Docker los contenedores se resuelven por nombre
+- Adminer no necesita una IP fija
+
+Frase util:
+
+"Pongo `mariadb` porque Adminer lo resuelve por DNS interno dentro de la red Docker."
+
+#### `Username: wp_user`
+
+- es el usuario de base de datos creado para WordPress
+- tiene permisos sobre la base `wordpress`
+- es mejor demostrar este usuario que entrar siempre como root
+
+Frase util:
+
+"Uso `wp_user` porque es el usuario de aplicacion real que emplea WordPress para hablar con MariaDB."
+
+#### `Password: wp_pass`
+
+- es la password asociada a `wp_user`
+- se define en el `.env`
+- permite autenticar el acceso a la base
+
+Frase util:
+
+"La password corresponde al usuario de aplicacion definido en las variables de entorno."
+
+#### `Database: wordpress`
+
+- es la base usada por la aplicacion WordPress
+- asi Adminer entra directamente en la DB correcta
+
+Frase util:
+
+"Selecciono `wordpress` porque es la base que usa la aplicacion y asi voy directo al contenido real del sitio."
+
+### 4. Que enseñar visualmente dentro de Adminer
+
+- que puedes iniciar sesion
+- que aparece la base `wordpress`
+- que puedes ver tablas de WordPress
+- si quieres, abrir alguna tabla como `wp_users` o `wp_options`
+
+Que he comprobado visualmente:
+
+- el login a Adminer funciona
+- se ve la base de datos `wordpress`
+- se puede navegar por su contenido desde la interfaz web
+
+Que explico:
+
+- Adminer no sustituye la terminal
+- es una interfaz visual para inspeccionar y administrar MariaDB
+
+### 5. Preguntas tipicas de evaluacion
+
+¿Por que `Server` es `mariadb` y no `127.0.0.1`?
+
+- porque Adminer habla con MariaDB dentro de la red Docker
+- no se conecta por localhost del host
+
+¿Por que usar `wp_user` y no `root`?
+
+- porque demuestra el usuario real de la aplicacion
+- `root` existe para administracion, pero el flujo normal de WordPress usa `wp_user`
+
+### 6. Resumen oral corto de Adminer
+
+Frase de 20 segundos:
+
+"Adminer es un bonus para gestionar MariaDB desde navegador. Lo levanto en un contenedor separado, construido desde Debian y PHP CLI, y lo expongo en `8081`. Para entrar uso `System: MySQL`, `Server: mariadb`, `Username: wp_user`, `Password: wp_pass` y `Database: wordpress`, porque Adminer se conecta a MariaDB por nombre de servicio dentro de la red Docker."
+
 ## Bonus 4 - Static site
+
+Objetivo del bonus:
+
+- levantar un sitio web adicional
+- que sea estatico
+- que no use PHP
+- que viva en su propio contenedor
+
+Arquitectura simple:
+
+```text
+Browser
+   |
+ http://127.0.0.1:8082
+   |
+ [ static_site ]
+   |
+ archivos estaticos HTML/CSS
+```
+
+### 1. Dockerfile, configuracion y contenido
+
+Comando:
+
+```bash
+sed -n '1,220p' srcs/requirements/static_site/Dockerfile
+sed -n '1,220p' srcs/requirements/static_site/conf/nginx.conf
+sed -n '1,220p' srcs/requirements/static_site/website/index.html
+```
+
+Que he comprobado:
+
+- usa `FROM debian:bullseye`
+- instala `nginx`
+- copia una configuracion propia de `nginx`
+- copia el sitio a `/var/www/static`
+- expone `8080`
+- arranca con `nginx -g "daemon off;"`
+
+Que he comprobado en la configuracion:
+
+- escucha en `8080`
+- usa `root /var/www/static`
+- usa `index index.html`
+- no hay PHP
+- no hay FastCGI
+
+Que he comprobado en el contenido:
+
+- existe un `index.html`
+- el sitio es HTML/CSS puro
+- no depende de WordPress
+
+Que explico:
+
+- es un servicio independiente del sitio principal
+- cumple el bonus de sitio estatico sin PHP
+- tiene su propio contenedor y su propia configuracion
+
+### 2. Prueba tecnica
 
 Comando:
 
@@ -1440,7 +1928,97 @@ Que explico:
 - es un servicio independiente del sitio WordPress
 - cumple el bonus de sitio estatico sin PHP
 
+### 3. Prueba visual
+
+Prueba visual:
+
+- abrir `http://127.0.0.1:8082`
+
+Que he comprobado visualmente:
+
+- la pagina del sitio estatico carga correctamente en navegador
+
+Que explico:
+
+- se ve un segundo sitio web distinto al WordPress principal
+- esto demuestra que el bonus no reutiliza la web principal, sino que levanta otro servicio
+
+### 4. Preguntas tipicas de evaluacion
+
+¿Por que esto cuenta como bonus?
+
+- porque es un servicio web adicional independiente
+- tiene contenedor, configuracion y contenido propios
+- no usa PHP, como pide el subject
+
+¿Por que no lo sirves desde el nginx principal?
+
+- porque el bonus debe ser un servicio extra
+- al ponerlo en otro contenedor demuestro separacion real entre servicios
+
+### 5. Resumen oral corto del sitio estatico
+
+Frase de 20 segundos:
+
+"El bonus static site es un segundo servicio web independiente del WordPress principal. Lo levanto en su propio contenedor con `nginx`, sirviendo archivos HTML/CSS desde `/var/www/static`, sin PHP. En el host responde en `8082`, y visualmente se puede abrir en navegador como una web separada."
+
 ## Bonus 5 - Portainer
+
+Objetivo del bonus:
+
+- tener una interfaz web para inspeccionar y administrar Docker
+- visualizar contenedores, redes, volumenes e imagenes
+- facilitar la observabilidad de la infraestructura
+
+Arquitectura simple:
+
+```text
+Browser
+   |
+ http://127.0.0.1:9000
+   |
+ [ Portainer ]
+   |
+ /var/run/docker.sock
+   |
+ Docker daemon
+```
+
+### 1. Dockerfile y arranque
+
+Comando:
+
+```bash
+sed -n '1,220p' srcs/requirements/portainer/Dockerfile
+sed -n '1,220p' srcs/requirements/portainer/tools/setup.sh
+```
+
+Que he comprobado:
+
+- usa `FROM debian:bullseye`
+- instala `ca-certificates`, `curl` y `tar`
+- descarga Portainer CE en un tarball oficial
+- lo descomprime en `/opt`
+- expone `9000`
+- arranca con `setup.sh`
+
+Que hace `setup.sh`:
+
+- exige el secret `portainer_admin_password`
+- crea `/data`
+- arranca Portainer con:
+  - `-H unix:///var/run/docker.sock`
+  - `--data /data`
+  - `--http-enabled`
+  - `--admin-password-file "$PASS_FILE"`
+
+Que explico:
+
+- Portainer esta en un contenedor bonus separado
+- usa el socket Docker para inspeccionar y administrar la infraestructura
+- el password admin inicial se carga desde un Docker secret
+
+### 2. Prueba tecnica
 
 Comando:
 
@@ -1466,3 +2044,42 @@ Que explico:
 - Portainer es mi servicio extra util
 - sirve para inspeccionar y administrar visualmente Docker
 - lo justifico porque ayuda a entender el estado de contenedores, volumenes y redes
+
+### 3. Prueba visual
+
+Prueba visual:
+
+- abrir `http://127.0.0.1:9000`
+
+Que he comprobado visualmente:
+
+- aparece el formulario de sesion de Portainer
+- la interfaz web esta accesible desde navegador
+
+Que explico:
+
+- visualmente se ve que el servicio esta levantado y listo para administrar Docker
+- desde ahi se pueden revisar contenedores, redes y volumenes
+
+### 4. Preguntas tipicas de evaluacion
+
+¿Por que elegiste Portainer como servicio extra?
+
+- porque es util para administrar visualmente Docker
+- permite ver contenedores, volumenes, redes e imagenes en una sola interfaz
+
+¿Por que monta `/var/run/docker.sock`?
+
+- porque Portainer necesita hablar con el daemon Docker
+- el socket le da acceso a la API local de Docker
+
+¿No es sensible montar el socket Docker?
+
+- si, es una capacidad sensible
+- por eso lo justifico solo como bonus de administracion
+
+### 5. Resumen oral corto de Portainer
+
+Frase de 20 segundos:
+
+"Portainer es mi servicio bonus de libre eleccion. Lo uso como panel visual para administrar Docker: contenedores, redes, volumenes e imagenes. Se expone en `9000`, usa el socket Docker para hablar con el daemon y carga el password admin inicial desde un Docker secret. Visualmente responde con su formulario de sesion, asi que el servicio esta operativo."
