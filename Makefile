@@ -37,7 +37,7 @@ URL  = https://$(HOST):$(PORT)
 # -----------------------------------------------
 # Targets
 # -----------------------------------------------
-.PHONY: all prepare-data up down build re ps logs nginx-logs wp-logs db-logs exec-nginx exec-wp exec-db status evaluate clean fclean clean-evaluate
+.PHONY: all prepare-data up down build re ps logs nginx-logs wp-logs db-logs exec-nginx exec-wp exec-db status evaluate clean fclean reset-data clean-evaluate
 
 # Target por defecto
 all: up
@@ -139,6 +139,13 @@ clean: down
 # - NO borra /home/<login>/data (bind mounts) a menos que tú los borres a mano
 fclean:
 	$(DC) down --rmi all -v --remove-orphans
+
+# Resetea la persistencia real del host (¡¡cuidado!!)
+# - Vacía el contenido de /home/aurodrig/data
+# - NO borra las carpetas en sí
+# - Se perderán la instalación de WordPress y los datos de MariaDB
+reset-data:
+	docker run --rm --entrypoint sh -v /home/aurodrig/data:/data srcs-nginx -lc 'rm -rf /data/wordpress/* /data/wordpress/.[!.]* /data/wordpress/..?* /data/mariadb/* /data/mariadb/.[!.]* /data/mariadb/..?*'
 
 # Limpieza total estilo evaluador (borra TODO en Docker)
 clean-evaluate:
