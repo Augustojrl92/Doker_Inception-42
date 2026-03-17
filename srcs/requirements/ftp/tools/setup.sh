@@ -15,8 +15,23 @@
 
 set -e
 
+load_secret() {
+  var_name="$1"
+  secret_file="$2"
+  fallback="${3:-}"
+
+  if [ -f "$secret_file" ]; then
+    value="$(cat "$secret_file")"
+  else
+    value="$fallback"
+  fi
+
+  export "$var_name=$value"
+}
+
 FTP_USER="${FTP_USER:-ftpuser}"
-FTP_PASSWORD="${FTP_PASSWORD:-ftp_pass_42}"
+load_secret "FTP_PASSWORD" "/run/secrets/ftp_password" "${FTP_PASSWORD:-ftp_pass_42}"
+FTP_PASSWORD="${FTP_PASSWORD}"
 FTP_ROOT="/srv/ftp"
 VSFTPD_CHROOT_DIR="/var/run/vsftpd/empty"
 FTP_PASV_ADDRESS="${FTP_PASV_ADDRESS:-127.0.0.1}"
