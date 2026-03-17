@@ -1,24 +1,23 @@
 # ==========================================================
-# Dockerfile - MariaDB
+# Dockerfile - FTP (Bonus Inception)
 # Proyecto Inception - 42
 #
 # OBJETIVO:
-#   1) Construir la imagen del servicio MariaDB
-#   2) Instalar el servidor y cliente MariaDB
-#   3) Preparar el arranque mediante setup.sh
+#   - Exponer un servidor FTP para acceder al volumen de WordPress
+#   - Construir imagen propia (Debian + vsftpd)
+#   - Mantener el proceso en foreground (PID 1)
 # ==========================================================
 
 FROM debian:bullseye
 
 RUN apt-get update && apt-get install -y \
-    mariadb-server \
-    mariadb-client \
+    vsftpd \
     && rm -rf /var/lib/apt/lists/*
 
+COPY conf/vsftpd.conf /etc/vsftpd.conf.template
 COPY tools/setup.sh /tools/setup.sh
-
 RUN chmod +x /tools/setup.sh
 
-EXPOSE 3306
+EXPOSE 21 21000-21010
 
 ENTRYPOINT ["/tools/setup.sh"]

@@ -1,16 +1,16 @@
-# =====================================================
-# Makefile - Inception (42)
+# ==========================================================
+# Makefile - Inception
+# Proyecto Inception - 42
 #
-# Objetivo:
-# - Simplificar comandos de Docker Compose
-# - Targets típicos: up, down, build, logs, clean...
-# - Target status: checklist estilo evaluador
+# OBJETIVO:
+#   1) Simplificar comandos de Docker Compose
+#   2) Centralizar targets de build, logs, limpieza y debug
+#   3) Ofrecer ayudas de comprobacion para la evaluacion
 #
-# Nota campus:
-# - Docker rootless suele impedir puertos < 1024 (como 443).
-# - Por eso en campus publicamos 8443->443.
-# - En la VM final podrás usar 443->443.
-# =====================================================
+# NOTA:
+#   - Este proyecto publica HTTPS directamente en 443
+#   - HOST y PORT pueden sobreescribirse al invocar make
+# ==========================================================
 
 # -----------------------------------------------
 # Docker Compose
@@ -26,28 +26,31 @@ DC = docker compose -f $(COMPOSE_DIR)/docker-compose.yml
 # URL de prueba (para `make status`)
 #
 # HOST: por defecto localhost
-# PORT:
-# - campus: 8443 (porque no deja 443)
-# - VM final: usa PORT=443
+# PORT: por defecto 443
 # -----------------------------------------------
 HOST ?= 127.0.0.1
-PORT ?= 8443
+PORT ?= 443
 URL  = https://$(HOST):$(PORT)
 
 # -----------------------------------------------
 # Targets
 # -----------------------------------------------
-.PHONY: all up down build re ps logs nginx-logs wp-logs db-logs exec-nginx exec-wp exec-db status clean fclean clean-evaluate
+.PHONY: all prepare-data up down build re ps logs nginx-logs wp-logs db-logs exec-nginx exec-wp exec-db status evaluate clean fclean reset-data clean-evaluate
 
 # Target por defecto
 all: up
 
+# Directorios persistentes requeridos por el subject
+prepare-data:
+	mkdir -p /home/aurodrig/data/mariadb
+	mkdir -p /home/aurodrig/data/wordpress
+
 # Levantar servicios (sin rebuild)
-up:
+up: prepare-data
 	$(DC) up -d
 
 # Levantar servicios forzando rebuild de imágenes
-build:
+build: prepare-data
 	$(DC) up -d --build
 
 # Parar y borrar contenedores/red (NO borra datos del host en bind mounts)
@@ -94,8 +97,8 @@ status:
 	@echo " URL prueba: $(URL)"
 	@echo "----------------------------------------------"
 	@echo " Tip:"
-	@echo "   campus: make status        (PORT=8443)"
-	@echo "   VM:     make status PORT=443"
+	@echo "   local:  make status"
+	@echo "   custom: make status HOST=<host> PORT=<port>"
 	@echo "=============================================="
 	@echo ""
 	@echo "1) Servicios (docker compose ps):"
@@ -118,6 +121,10 @@ status:
 	@echo ""
 	@echo "✅ Si ves 200/302 y los mounts apuntan a /home/<login>/data, vas bien."
 
+# Checklist rapido basado en la evaluacion
+evaluate:
+	./scripts/evaluate.sh
+
 # -----------------------------------------------
 # Limpiezas
 # -----------------------------------------------
@@ -126,10 +133,14 @@ status:
 clean: down
 
 # Limpieza “fuerte” (¡¡cuidado!!)
-# - Borra contenedores, imágenes y volúmenes del compose
-# - NO borra /home/<login>/data (bind mounts) a menos que tú los borres a mano
+
 fclean:
 	$(DC) down --rmi all -v --remove-orphans
+
+# Resetea la persistencia real del host (¡¡cuidado!!)
+
+reset-data:
+	docker run --rm --entrypoint sh -v /home/aurodrig/data:/data srcs-nginx -lc 'rm -rf /data/wordpress/* /data/wordpress/.[!.]* /data/wordpress/..?* /data/mariadb/* /data/mariadb/.[!.]* /data/mariadb/..?*'
 
 # Limpieza total estilo evaluador (borra TODO en Docker)
 clean-evaluate:

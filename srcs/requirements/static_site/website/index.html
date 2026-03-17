@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aurodrig | Chess Profile</title>
+  <style>
+    :root {
+      --ink: #f5f0e6;
+      --muted: #c9bfaf;
+      --gold: #d4a84f;
+      --wood-dark: #3b7d4f;
+      --wood-mid: #5ea16f;
+      --wood-light: #f3f5ef;
+      --paper: #16110d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Baskerville", "Times New Roman", serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 15% 20%, rgba(212, 168, 79, 0.22), transparent 36%),
+        radial-gradient(circle at 85% 5%, rgba(255, 255, 255, 0.1), transparent 30%),
+        linear-gradient(160deg, #1c140f, #0e0b09);
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    .panel {
+      width: min(980px, 100%);
+      border: 1px solid rgba(212, 168, 79, 0.35);
+      border-radius: 18px;
+      background: linear-gradient(180deg, rgba(29, 22, 17, 0.96), rgba(15, 12, 10, 0.96));
+      box-shadow: 0 26px 70px rgba(0, 0, 0, 0.55);
+      overflow: hidden;
+    }
+    header {
+      padding: 30px 30px 18px;
+      border-bottom: 1px solid rgba(212, 168, 79, 0.25);
+    }
+    .tag {
+      display: inline-block;
+      font-size: 0.76rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: #2a2017;
+      background: var(--gold);
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-weight: 700;
+    }
+    h1 {
+      margin: 14px 0 8px;
+      font-size: clamp(2rem, 3.8vw, 3.2rem);
+      line-height: 1.06;
+    }
+    .lead {
+      margin: 0;
+      color: var(--muted);
+      font-family: "Trebuchet MS", "Gill Sans", sans-serif;
+      font-size: 1rem;
+      letter-spacing: 0.02em;
+    }
+    .content {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      padding: 24px 30px 32px;
+    }
+    .card {
+      border: 1px solid rgba(212, 168, 79, 0.18);
+      border-radius: 14px;
+      padding: 18px;
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .card h2 {
+      margin: 0 0 12px;
+      font-size: 1.1rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--gold);
+    }
+    ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-family: "Trebuchet MS", "Gill Sans", sans-serif;
+    }
+    li { margin: 8px 0; }
+    .board {
+      aspect-ratio: 1 / 1;
+      border-radius: 10px;
+      border: 6px solid #21442d;
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.45);
+      background:
+        conic-gradient(from 90deg, var(--wood-light) 90deg, var(--wood-dark) 0 180deg, var(--wood-light) 0 270deg, var(--wood-dark) 0) 0 0 / 25% 25%;
+      position: relative;
+      overflow: hidden;
+    }
+    .pieces {
+      position: absolute;
+      inset: 10px;
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      grid-template-rows: repeat(8, 1fr);
+      font-size: clamp(18px, 3.6vw, 38px);
+      line-height: 1;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+    }
+    .pieces span { display: grid; place-items: center; }
+    .pieces .b {
+      color: #000000;
+      text-shadow: 0 1px 0 rgba(255, 255, 255, 0.12);
+    }
+    .pieces .w {
+      color: #ffffff;
+      text-shadow: 0 2px 3px rgba(0, 0, 0, 0.75);
+    }
+    .footer {
+      padding: 0 30px 26px;
+      color: var(--muted);
+      font-size: 0.93rem;
+      font-family: "Trebuchet MS", "Gill Sans", sans-serif;
+    }
+    @media (max-width: 760px) {
+      .content { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="panel">
+    <header>
+      <span class="tag">Inception Bonus • Static Site</span>
+      <h1>Aurodrig Chess Corner</h1>
+      <p class="lead">Un espacio estático para compartir estilo, estrategia y disciplina sobre el tablero.</p>
+    </header>
+
+    <section class="content">
+      <article class="card">
+        <h2>Perfil</h2>
+        <ul>
+          <li>Jugador orientado a táctica y finales.</li>
+          <li>Aperturas favoritas: Italiana, Francesa, India de Rey.</li>
+          <li>Objetivo: mejorar cálculo y gestión del tiempo.</li>
+          <li>Proyecto 42: infraestructura con precisión de ajedrez.</li>
+        </ul>
+      </article>
+
+      <article class="card">
+        <h2>Tablero</h2>
+        <div class="board" aria-label="Tablero decorativo de ajedrez">
+          <div class="pieces">
+            <span class="b">♜</span><span class="b">♞</span><span class="b">♝</span><span class="b">♛</span><span class="b">♚</span><span class="b">♝</span><span class="b">♞</span><span class="b">♜</span>
+            <span class="b">♟</span><span class="b">♟</span><span class="b">♟</span><span class="b">♟</span><span class="b">♟</span><span class="b">♟</span><span class="b">♟</span><span class="b">♟</span>
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+            <span class="w">♙</span><span class="w">♙</span><span class="w">♙</span><span class="w">♙</span><span class="w">♙</span><span class="w">♙</span><span class="w">♙</span><span class="w">♙</span>
+            <span class="w">♖</span><span class="w">♘</span><span class="w">♗</span><span class="w">♕</span><span class="w">♔</span><span class="w">♗</span><span class="w">♘</span><span class="w">♖</span>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <p class="footer">Servicio estático sin PHP, desplegado en contenedor dedicado para Inception.</p>
+  </main>
+</body>
+</html>

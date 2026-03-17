@@ -9,7 +9,8 @@
 #   3) Crear wp-config.php si no existe (credenciales DB)
 #   4) Instalar WordPress automaticamente (SOLO 1 vez)
 #   5) Crear un usuario normal (SOLO 1 vez)
-#   6) Arrancar PHP-FPM en foreground (PID 1)
+#   6) Configurar bonus Redis cache (idempotente)
+#   7) Arrancar PHP-FPM en foreground (PID 1)
 #
 # NOTA:
 #   - Este contenedor NO incluye NGINX.
@@ -17,29 +18,43 @@
 #   - Todo debe ser IDEMPOTENTE: reinicios no reinstalan WP.
 # ==========================================================
 
-set -e # Corta el script si un comando falla.
+set -e
 
-# Carpeta donde vive WordPress dentro del contenedor.
-# Esta ruta esta montada como volumen desde el host.
+load_secret() {
+  var_name="$1"
+  secret_file="$2"
+  fallback="${3:-}"
+
+  if [ -f "$secret_file" ]; then
+    value="$(cat "$secret_file")"
+  else
+    value="$fallback"
+  fi
+
+  export "$var_name=$value"
+}
+
 WP_PATH="/var/www/html"
-
-# Host de MariaDB en la red docker (por defecto: mariadb).
 DB_HOST="${MYSQL_HOST:-mariadb}"
+
+load_secret "MYSQL_PASSWORD" "/run/secrets/db_password" "${MYSQL_PASSWORD:-}"
+load_secret "WP_ADMIN_PASSWORD" "/run/secrets/wp_admin_password" "${WP_ADMIN_PASSWORD:-}"
+load_secret "WP_USER_PASSWORD" "/run/secrets/wp_user_password" "${WP_USER_PASSWORD:-}"
 
 # ----------------------------------------------------------
 # 1) Esperar a que MariaDB este lista
 # ----------------------------------------------------------
 echo "[wp] Esperando a MariaDB en ${DB_HOST}..."
 until mariadb-admin ping -h"$DB_HOST" -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" --silent >/dev/null 2>&1; do
-  sleep 2 # Reintenta cada 2s hasta que la DB responda.
+  sleep 2
 done
 echo "[wp] MariaDB lista."
 
 # ----------------------------------------------------------
 # 2) Preparar carpeta y entrar
 # ----------------------------------------------------------
-mkdir -p "$WP_PATH" # Asegura el directorio.
-cd "$WP_PATH"       # Nos movemos al root de WordPress.
+mkdir -p "$WP_PATH"
+cd "$WP_PATH"
 
 # ----------------------------------------------------------
 # 3) Asegurar WP-CLI disponible
@@ -89,7 +104,6 @@ if ! wp core is-installed --allow-root >/dev/null 2>&1; then
 
   echo "[wp] WordPress instalado."
 
-  # Crear usuario normal (no admin)
   if ! wp user get "$WP_USER" --allow-root >/dev/null 2>&1; then
     echo "[wp] Creando usuario normal: $WP_USER"
     wp user create --allow-root \
@@ -102,9 +116,26 @@ else
 fi
 
 # ----------------------------------------------------------
-# 7) Arrancar PHP-FPM en foreground (PID 1)
+# 7) Bonus: Redis cache (idempotente)
 # ----------------------------------------------------------
-# PHP-FPM necesita /run/php para crear su PID file.
+if wp core is-installed --allow-root >/dev/null 2>&1; then
+  echo "[wp] Configurando Redis cache..."
+
+  wp config set WP_REDIS_HOST 'redis' --type=constant --allow-root >/dev/null 2>&1 || true
+  wp config set WP_REDIS_PORT 6379 --raw --type=constant --allow-root >/dev/null 2>&1 || true
+
+  if ! wp plugin is-installed redis-cache --allow-root >/dev/null 2>&1; then
+    wp plugin install redis-cache --activate --allow-root || true
+  else
+    wp plugin activate redis-cache --allow-root >/dev/null 2>&1 || true
+  fi
+
+  wp redis enable --allow-root >/dev/null 2>&1 || true
+fi
+
+# ----------------------------------------------------------
+# 8) Arrancar PHP-FPM en foreground (PID 1)
+# ----------------------------------------------------------
 mkdir -p /run/php
 chown -R www-data:www-data /run/php
 

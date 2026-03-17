@@ -1,210 +1,213 @@
-# =====================================================
-# docker-compose.yml
+# ==========================================================
+# docker-compose.yml - Orquestacion de servicios
 # Proyecto Inception - 42
 #
-# Docker Compose permite definir y ejecutar
-# múltiples contenedores Docker como un solo servicio.
-#
-# En este punto levantamos:
-# - MariaDB
-# - WordPress (php-fpm)
-# - NGINX (HTTPS)
-# =====================================================
+# OBJETIVO:
+#   1) Definir los servicios del proyecto
+#   2) Conectar los contenedores por una red Docker privada
+#   3) Declarar la persistencia obligatoria en /home/<login>/data
+#   4) Montar secrets para las credenciales sensibles
+#   5) Exponer solo los puertos necesarios al host
+# ==========================================================
 
 services:
-  # -----------------------------------------------
-  # Servicio MariaDB
-  # -----------------------------------------------
+  # ----------------------------------------------------------
+  # 1) MariaDB
+  # Base de datos del proyecto.
+  # Guarda sus datos en /var/lib/mysql mediante mariadb_data.
+  # ----------------------------------------------------------
   mariadb:
-
-    # build indica que Docker debe construir la imagen
-    # usando el Dockerfile que está en esta ruta.
-    # NO usamos imágenes preconstruidas (prohibido por el subject).
     build: ./requirements/mariadb
-
-    # Nombre explícito del contenedor.
-    # El subject exige container_name igual al servicio.
     container_name: mariadb
-
-    # Política de reinicio:
-    # - unless-stopped: el contenedor se reinicia si falla,
-    #   excepto si el usuario lo detiene manualmente.
     restart: unless-stopped
-
-    # Cargamos variables desde el archivo .env
-    # Esto permite separar configuración del código
-    # y evitar hardcodear valores.
     env_file:
       - .env
-
     environment:
-      # Nombre de la base de datos que se creará al arrancar
-      # Esta variable será usada dentro del setup.sh
       - MYSQL_DATABASE=${MYSQL_DATABASE}
-
-      # Usuario de la base de datos (no root)
-      # WordPress usará este usuario para conectarse
       - MYSQL_USER=${MYSQL_USER}
-
-      # Contraseña del usuario normal
-      # Por ahora la pasamos por .env para simplificar el test
-      # Más adelante se moverá a secrets/
-      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
-
-      # Contraseña del usuario root de MariaDB
-      # Necesaria para inicializar la base
-      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
-
+    secrets:
+      - db_password
+      - db_root_password
     volumes:
-      # Persistencia exigida por el subject:
-      # Los datos de MariaDB viven en el HOST (VM)
-      # en /home/<login>/data/mariadb
       - mariadb_data:/var/lib/mysql
-
-
-    # Conectamos el contenedor a una red Docker dedicada
-    # Esto permite que otros servicios (WordPress)
-    # se comuniquen usando el nombre "mariadb"
     networks:
       - inception
-  # -----------------------------------------------
-  # Servicio WordPress (PHP-FPM)
-  # -----------------------------------------------
+
+  # ----------------------------------------------------------
+  # 2) WordPress (PHP-FPM)
+  # Ejecuta la logica PHP de WordPress.
+  # Usa el volumen wordpress_data y se conecta a MariaDB/Redis.
+  # ----------------------------------------------------------
   wordpress:
-
-    # Construimos la imagen desde nuestro Dockerfile propio
-    # (prohibido usar imagen wordpress:php-fpm ya hecha)
     build: ./requirements/wordpress
-
-    # Nombre del contenedor (mismo criterio que mariadb)
     container_name: wordpress
-
-    # Reinicio automático si falla (requisito del subject)
     restart: unless-stopped
-
-    # Cargamos variables desde .env (credenciales y config)
     env_file:
       - .env
-
     environment:
-      # Host de MariaDB dentro de la red Docker:
-      # es el nombre del servicio "mariadb"
       - MYSQL_HOST=mariadb
-
+    secrets:
+      - db_password
+      - wp_admin_password
+      - wp_user_password
     volumes:
-      # Persistencia exigida por el subject:
-      # Archivos del sitio (WordPress core, uploads, wp-config.php, etc.)
-      # viven en el HOST (VM) en /home/<login>/data/wordpress
       - wordpress_data:/var/www/html
-
     networks:
-      # Conectamos WordPress a la misma red interna
       - inception
-
     depends_on:
-      # Orden de arranque: primero mariadb, luego wordpress
-      # OJO: esto no espera "DB ready" al 100%, solo arranca antes.
-      # Por eso el setup.sh suele incluir un "wait" a la DB.
       - mariadb
-  
-  # -----------------------------------------------
-  # Servicio NGINX (HTTPS + reverse proxy)
-  # -----------------------------------------------
+      - redis
+
+  # ----------------------------------------------------------
+  # 3) NGINX
+  # Unico entrypoint publico del mandatory.
+  # Expone HTTPS por 443 y sirve el contenido de WordPress.
+  # ----------------------------------------------------------
   nginx:
-
-    # build:
-    # Construimos la imagen de NGINX desde nuestro Dockerfile propio.
-    # El subject prohíbe usar imágenes ya hechas (nginx:latest, etc).
     build: ./requirements/nginx
-
-    # container_name:
-    # Nombre explícito del contenedor.
-    # Debe coincidir con el nombre del servicio (criterio del subject).
     container_name: nginx
-
-    # restart:
-    # Política de reinicio automático.
-    # - unless-stopped: el contenedor se reinicia si falla,
-    #   excepto si el usuario lo detiene manualmente.
     restart: unless-stopped
-
-    # env_file:
-    # Cargamos variables de entorno desde .env.
-    # Aquí se usa principalmente para DOMAIN_NAME,
-    # que se emplea en el certificado TLS y/o configuración.
     env_file:
       - .env
-
-    # ports:
-    # Mapeo de puertos HOST:CONTENEDOR.
-    #
-    # - 443: puerto HTTPS estándar en el host (la VM)
-    # - 443: puerto interno donde escucha NGINX
-    #
-    # Es el ÚNICO servicio que expone puertos al host,
-    # tal como exige el subject (no exponer MariaDB ni PHP).
     ports:
-      - "8443:443"
-
-    # volumes:
-    # Volumen compartido entre:
-    # - NGINX (sirve los archivos)
-    # - WordPress (los genera/modifica)
-    #
-    # /home/<login>/data/wordpress  -> datos persistentes en el HOST (VM)
-    # /var/www/html                -> raíz del sitio dentro del contenedor
-    #
-    # Esto garantiza:
-    # - persistencia
-    # - separación código / datos
-    # - cumplimiento del subject
+      - "443:443"
     volumes:
       - wordpress_data:/var/www/html
-
-    # networks:
-    # Conectamos NGINX a la red Docker interna "inception".
-    #
-    # Gracias a esta red:
-    # - NGINX puede resolver "wordpress" por DNS
-    # - se comunica con PHP-FPM vía FastCGI (wordpress:9000)
     networks:
       - inception
-
-    # depends_on:
-    # Define el orden de arranque:
-    # - WordPress debe arrancar antes que NGINX
-    #
-    # IMPORTANTE:
-    # depends_on NO espera a que WordPress esté "listo",
-    # solo garantiza que el contenedor exista.
-    # La lógica real de readiness se maneja en los scripts.
     depends_on:
       - wordpress
 
+  # ----------------------------------------------------------
+  # 4) Adminer
+  # Interfaz web bonus para consultar y administrar MariaDB.
+  # ----------------------------------------------------------
+  adminer:
+    build: ./requirements/adminer
+    container_name: adminer
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    networks:
+      - inception
+    depends_on:
+      - mariadb
 
+  # ----------------------------------------------------------
+  # 5) Redis
+  # Servicio bonus de cache para WordPress.
+  # Solo se usa dentro de la red interna de Docker.
+  # ----------------------------------------------------------
+  redis:
+    build: ./requirements/redis
+    container_name: redis
+    restart: unless-stopped
+    networks:
+      - inception
 
-# -----------------------------------------------
-# Definición de redes
-# -----------------------------------------------
+  # ----------------------------------------------------------
+  # 6) FTP
+  # Servicio bonus para acceder al volumen de WordPress.
+  # Usa el mismo almacenamiento compartido en /srv/ftp.
+  # ----------------------------------------------------------
+  ftp:
+    build: ./requirements/ftp
+    container_name: ftp
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - FTP_USER=${FTP_USER}
+    secrets:
+      - ftp_password
+    ports:
+      - "2121:21"
+      - "21000-21010:21000-21010"
+    volumes:
+      - wordpress_data:/srv/ftp
+    networks:
+      - inception
+    depends_on:
+      - wordpress
+
+  # ----------------------------------------------------------
+  # 7) Static Site
+  # Sitio estatico bonus separado del WordPress principal.
+  # ----------------------------------------------------------
+  static_site:
+    build: ./requirements/static_site
+    container_name: static_site
+    restart: unless-stopped
+    ports:
+      - "8082:8080"
+    networks:
+      - inception
+
+  # ----------------------------------------------------------
+  # 8) Portainer
+  # Servicio bonus para administracion visual de Docker.
+  # ----------------------------------------------------------
+  portainer:
+    build: ./requirements/portainer
+    container_name: portainer
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    volumes:
+      - portainer_data:/data
+      - ${DOCKER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock
+    secrets:
+      - portainer_admin_password
+    networks:
+      - inception
+
+# ----------------------------------------------------------
+# 9) Red del proyecto
+# Todos los servicios se comunican aqui por nombre.
+# No se usa network_mode: host.
+# ----------------------------------------------------------
 networks:
   inception:
-    # Bridge es el driver por defecto de Docker
-    # Crea una red aislada interna para los contenedores
     driver: bridge
 
-# -----------------------------------------------
-# Volúmenes (bind mounts gestionados por Docker)
-# -----------------------------------------------
+# ----------------------------------------------------------
+# 10) Volumenes
+# Los dos volumenes obligatorios se respaldan en:
+#   - /home/aurodrig/data/mariadb
+#   - /home/aurodrig/data/wordpress
+# ----------------------------------------------------------
 volumes:
   mariadb_data:
+    name: mariadb_data
     driver: local
     driver_opts:
       type: none
       o: bind
       device: /home/aurodrig/data/mariadb
   wordpress_data:
+    name: wordpress_data
     driver: local
     driver_opts:
       type: none
       o: bind
       device: /home/aurodrig/data/wordpress
+  portainer_data:
+    name: portainer_data
+
+# ----------------------------------------------------------
+# 11) Secrets
+# Credenciales sensibles montadas dentro de /run/secrets.
+# ----------------------------------------------------------
+secrets:
+  db_root_password:
+    file: ./secrets/db_root_password
+  db_password:
+    file: ./secrets/db_password
+  ftp_password:
+    file: ./secrets/ftp_password
+  portainer_admin_password:
+    file: ./secrets/portainer_admin_password
+  wp_admin_password:
+    file: ./secrets/wp_admin_password
+  wp_user_password:
+    file: ./secrets/wp_user_password
