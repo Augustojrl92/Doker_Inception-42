@@ -9,6 +9,7 @@ ENV_FILE="$ROOT_DIR/srcs/.env"
 HOST="${HOST:-127.0.0.1}"
 HTTPS_PORT="${PORT:-443}"
 HTTP_PORT="${HTTP_PORT:-80}"
+MARIADB_ROOT_SECRET_FILE="${MARIADB_ROOT_SECRET_FILE:-/run/secrets/db_root_password}"
 
 if [ -f "$ENV_FILE" ]; then
   set -a
@@ -71,7 +72,7 @@ section "Network"
 docker network ls | sed -n '1,20p'
 
 section "Ports"
-docker ps --format 'table {{.Names}}\t{{.Ports}}'
+docker compose -f "$COMPOSE_FILE" ps
 
 section "Mounts"
 docker inspect mariadb wordpress nginx --format '{{.Name}}|{{range .Mounts}}{{.Type}}:{{.Name}}:{{.Source}}->{{.Destination}} {{end}}'
@@ -106,10 +107,14 @@ else
   sed -n '1,12p' /tmp/inception_db_nopass || true
 fi
 
-if [ -n "${MYSQL_ROOT_PASSWORD:-}" ]; then
+if docker exec mariadb sh -lc "test -f '$MARIADB_ROOT_SECRET_FILE'" >/dev/null 2>&1; then
+  printf '[OK] root password secret found at %s\n' "$MARIADB_ROOT_SECRET_FILE"
+  docker exec mariadb sh -lc "mariadb -u root -p\"\$(cat '$MARIADB_ROOT_SECRET_FILE')\" -e 'SHOW DATABASES;'"
+elif [ -n "${MYSQL_ROOT_PASSWORD:-}" ]; then
+  printf '[OK] using MYSQL_ROOT_PASSWORD from %s\n' "$ENV_FILE"
   docker exec mariadb sh -lc "mariadb -u root -p\"$MYSQL_ROOT_PASSWORD\" -e 'SHOW DATABASES;'"
 else
-  printf 'MYSQL_ROOT_PASSWORD not loaded from %s; skipping authenticated MariaDB check\n' "$ENV_FILE"
+  printf '[KO] no MariaDB root password source found (neither %s nor MYSQL_ROOT_PASSWORD in %s)\n' "$MARIADB_ROOT_SECRET_FILE" "$ENV_FILE"
 fi
 
 section "WordPress"
