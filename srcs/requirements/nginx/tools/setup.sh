@@ -1,19 +1,22 @@
 #!/bin/sh
-# =====================================
+# ==========================================================
 # setup.sh - NGINX (TLS)
 # Proyecto Inception - 42
 #
-# Objetivo:
-# - Generar certificado TLS autofirmado si no existe
-# - Arrancar NGINX en foreground (daemon off)
-# =====================================
+# OBJETIVO:
+#   1) Generar un certificado TLS autofirmado si no existe
+#   2) Esperar a que WordPress (PHP-FPM) este disponible
+#   3) Arrancar NGINX en foreground como PID 1
+# ==========================================================
 
 set -e
 
 CERT="/etc/nginx/ssl/inception.crt"
 KEY="/etc/nginx/ssl/inception.key"
 
-# Si no existe el cert/key, los generamos una sola vez
+# ----------------------------------------------------------
+# 1) Generar certificado TLS autofirmado
+# ----------------------------------------------------------
 if [ ! -f "$CERT" ] || [ ! -f "$KEY" ]; then
   echo "[nginx] Generando certificado TLS autofirmado..."
 
@@ -24,12 +27,16 @@ if [ ! -f "$CERT" ] || [ ! -f "$KEY" ]; then
     -subj "/C=FR/ST=IDF/L=Paris/O=42/OU=Inception/CN=${DOMAIN_NAME}"
 fi
 
-# Espera a que PHP-FPM (contenedor wordpress) este escuchando antes de levantar nginx.
-# Evita 502 temporales justo despues de un down/up.
+# ----------------------------------------------------------
+# 2) Esperar a que WordPress escuche en 9000
+# ----------------------------------------------------------
 echo "[nginx] Esperando a wordpress:9000..."
 while ! nc -z wordpress 9000 >/dev/null 2>&1; do
   sleep 1
 done
 
+# ----------------------------------------------------------
+# 3) Arrancar NGINX en foreground
+# ----------------------------------------------------------
 echo "[nginx] Arrancando NGINX..."
 exec nginx -g "daemon off;"
