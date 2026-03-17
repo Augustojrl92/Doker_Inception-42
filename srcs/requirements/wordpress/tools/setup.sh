@@ -20,12 +20,30 @@
 
 set -e # Corta el script si un comando falla.
 
+load_secret() {
+  var_name="$1"
+  secret_file="$2"
+  fallback="${3:-}"
+
+  if [ -f "$secret_file" ]; then
+    value="$(cat "$secret_file")"
+  else
+    value="$fallback"
+  fi
+
+  export "$var_name=$value"
+}
+
 # Carpeta donde vive WordPress dentro del contenedor.
 # Esta ruta esta montada como volumen desde el host.
 WP_PATH="/var/www/html"
 
 # Host de MariaDB en la red docker (por defecto: mariadb).
 DB_HOST="${MYSQL_HOST:-mariadb}"
+
+load_secret "MYSQL_PASSWORD" "/run/secrets/db_password" "${MYSQL_PASSWORD:-}"
+load_secret "WP_ADMIN_PASSWORD" "/run/secrets/wp_admin_password" "${WP_ADMIN_PASSWORD:-}"
+load_secret "WP_USER_PASSWORD" "/run/secrets/wp_user_password" "${WP_USER_PASSWORD:-}"
 
 # ----------------------------------------------------------
 # 1) Esperar a que MariaDB este lista

@@ -18,6 +18,23 @@ set -e # Corta el script si un comando falla, evitando estados incoherentes.
 DATADIR="/var/lib/mysql" # Ruta del datadir donde MariaDB guarda los datos.
 SOCKET="/run/mysqld/mysqld.sock" # Socket local para conexiones sin red.
 
+load_secret() {
+  var_name="$1"
+  secret_file="$2"
+  fallback="${3:-}"
+
+  if [ -f "$secret_file" ]; then
+    value="$(cat "$secret_file")"
+  else
+    value="$fallback"
+  fi
+
+  export "$var_name=$value"
+}
+
+load_secret "MYSQL_PASSWORD" "/run/secrets/db_password" "${MYSQL_PASSWORD:-}"
+load_secret "MYSQL_ROOT_PASSWORD" "/run/secrets/db_root_password" "${MYSQL_ROOT_PASSWORD:-}"
+
 mkdir -p /run/mysqld # Crea el directorio del socket si no existe.
 chown -R mysql:mysql /run/mysqld # Asegura permisos del usuario mysql.
 
